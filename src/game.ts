@@ -39,42 +39,45 @@ export const launchGame = (bot: Telegraf) => {
     }
 
     if (player.step === 'inputPlayerColor') {
-      return PlayerColor()
+      const userInputColor = ctx.message.text
+      const color = await PlayerColor(userInputColor) 
+      await ctx.reply(`Вы выбрали цвет: ${color}`)
+      player.step = 'bet'
+      return
     }
-    
+
     await ctx.reply('Неизвестная команда.')
     
     /* Действия */
 
-    async function PlayerColor(PlayerColor: string) {
-      // if (ctx.message.text == 'Красный'){
-      //   return 'Красный'
-      // }
-      // else{
-      //   return 'Чёрный'
-      // }
-      switch(PlayerColor){
-        case 'red':
-          return 'Красный'
-        case 'black':
-          return 'Чёрный'
+    async function PlayerColor(input: string): Promise<PlayerColor | null> {
+      switch (input) {
+        case 'Красный':
+          return 'red'
+        case 'Чёрный':
+          return 'black'
+        default:
+          await ctx.reply('Неверный цвет. Выберите "Красный" или "Чёрный".')
+          return null
       }
-      return PlayerColor
     }
 
     async function inputStartBalance() {
+      const chatId = String(ctx.chat.id) // Приводим chatId к строке
       const startBalance = Number(ctx.message.text)
-        
+  
       if (!isFinite(startBalance) || startBalance <= 0) {
         await ctx.reply('Введите число больше нуля.')
         return
       }
-    
+  
       store[chatId] = {
         start_balance: startBalance,
         balance: startBalance,
-        step: 'startBalance',
+        step: 'inputPlayerColor', // Переход к следующему шагу
       }
+  
+      await ctx.reply(`Баланс установлен: ${startBalance}. Теперь выберите цвет: "Красный" или "Чёрный".`)
     }
   })
 }
