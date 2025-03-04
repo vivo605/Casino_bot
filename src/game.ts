@@ -1,22 +1,20 @@
+// import { randomInt } from 'node:crypto' // [min..max)
 import { Telegraf } from 'telegraf'
 import { message } from 'telegraf/filters'
-import { RandomColor, PlayerColor } from './types'
+
+type PlayerColor = 'red' | 'black'
+type RandomColor = PlayerColor | 'green'
+type step_player = 'inputPlayerColor' | 'inputBet' | 'playerWantContinue'
 
 type Player = {
   readonly start_balance: number
   balance: number
-  step: string
+  step: step_player
   selectedColor?: PlayerColor
 }
 
 type Store = {
   [id: string]: Player
-}
-
-function getRandomIntInclusive(min: number, max: number) {
-  min = Math.ceil(min)
-  max = Math.floor(max)
-  return Math.floor(Math.random() * (max - min + 1) + min)
 }
 
 export const launchGame = (bot: Telegraf) => {
@@ -32,22 +30,64 @@ export const launchGame = (bot: Telegraf) => {
     const player = store[chatId]
 
     if (!player) {
-      return inputStartBalance(ctx)
+      return inputStartBalance()
     }
 
     if (player.step === 'inputPlayerColor') {
-      const userInputColor = ctx.message.text
-      const color = await PlayerColor(ctx, userInputColor)
-      if (color) {
-        player.selectedColor = color
-        await ctx.reply(`Вы выбрали цвет: ${color}`)
-        player.step = 'bet'
-        await ctx.reply('Теперь введите вашу ставку.')
-      }
-      return
+      return inputPlayerColor(player)
     }
 
-    if (player.step === 'bet') {
+    if (player.step === 'inputBet') {
+      return inputBet(player)
+    }
+
+    if (player.step === 'playerWantContinue') {
+      return playerWantContinue(player)
+    }
+
+    await ctx.reply('Неизвестная команда.')
+
+    // события
+
+    async function inputStartBalance() {
+      const chatId = String(ctx.chat.id)
+      const startBalance = Number(ctx.message.text)
+
+      if (!isFinite(startBalance)) {
+        await ctx.reply('Введите число.')
+        return
+      }
+
+      if (startBalance <= 0) {
+        await ctx.reply('Баланс должен быть больше нуля.')
+        return
+      }
+
+      store[chatId] = {
+        start_balance: startBalance,
+        balance: startBalance,
+        step: 'inputPlayerColor',
+      }
+
+      await ctx.reply(`Баланс установлен: ${startBalance}. Теперь выберите цвет: "Красный" или "Чёрный".`)
+    }
+
+    async function inputPlayerColor(player: Player) {
+      const userInputColor = ctx.message.text
+      const color = PlayerColor[userInputColor]
+
+      if (!color) {
+        await ctx.reply('Неверный цвет. Выберите "Красный" или "Чёрный".')
+        return
+      }
+
+      player.selectedColor = color
+      await ctx.reply(`Вы выбрали цвет: ${translateColor[color]}`)
+      player.step = 'inputBet'
+      await ctx.reply('Теперь введите вашу ставку.')
+    }
+
+    async function inputBet(player:Player) {
       const betAmount = Number(ctx.message.text)
       if (!isFinite(betAmount)) {
         await ctx.reply('Введите число.')
@@ -59,7 +99,7 @@ export const launchGame = (bot: Telegraf) => {
       }
 
       const aiColor = colorAi()
-      await ctx.reply(`AI выбрал цвет: ${aiColor}`)
+      await ctx.reply(`AI выбрал цвет: ${translateColor[aiColor]}`)
 
       if (player.selectedColor === aiColor) {
         player.balance += betAmount
@@ -70,7 +110,7 @@ export const launchGame = (bot: Telegraf) => {
       }
 
       if (player.balance <= 0) {
-        await ctx.reply('Ваш баланс равен нулю. Игра окончена.')
+        await ctx.reply('Ваш баланс равен нулю.')
         delete store[chatId]
         return
       }
@@ -80,7 +120,7 @@ export const launchGame = (bot: Telegraf) => {
       return
     }
 
-    if (player.step === 'playerWantContinue') {
+    async function playerWantContinue(player: Player) {
       const userInput = ctx.message.text.toLowerCase()
       if (userInput === 'да') {
         player.step = 'inputPlayerColor'
@@ -91,55 +131,52 @@ export const launchGame = (bot: Telegraf) => {
       } else {
         await ctx.reply('Пожалуйста, ответьте "Да" или "Нет".')
       }
-      return
     }
-
-    await ctx.reply('Неизвестная команда.')
   })
+}
 
-  async function PlayerColor(ctx: any, input: string): Promise<PlayerColor | null> {
-    switch (input) {
-      case 'Красный':
-        return 'red'
-      case 'Чёрный':
-        return 'black'
-      default:
-        await ctx.reply('Неверный цвет. Выберите "Красный" или "Чёрный".')
-        return null
-    }
-  }
+const PlayerColor: Record<string, PlayerColor> = {
+  'Красный': 'red',
+  'Чёрный': 'black',
+}
+// function PlayerColor(input: string): PlayerColor | null {
+//   switch (input) {
+//     case 'Красный':
+//       return 'red'
+//     case 'Чёрный':
+//       return 'black'
+//     default:
+//       return null
+//   }
+// }
 
-  async function inputStartBalance(ctx: any) {
-    const chatId = String(ctx.chat.id)
-    const startBalance = Number(ctx.message.text)
+function colorAi(): RandomColor {
+  const randomValue = getRandomIntInclusive(0, 100)
 
-    if (!isFinite(startBalance)) {
-      await ctx.reply('Введите число.')
-      return
-    }
-    if (startBalance <= 0) {
-      await ctx.reply('Баланс должен быть больше нуля.')
-      return
-    }
-
-    store[chatId] = {
-      start_balance: startBalance,
-      balance: startBalance,
-      step: 'inputPlayerColor',
-    }
-
-    await ctx.reply(`Баланс установлен: ${startBalance}. Теперь выберите цвет: "Красный" или "Чёрный".`)
-  }
-
-  function colorAi(): RandomColor {
-    const randomValue = getRandomIntInclusive(0, 100)
-
-    if (randomValue <= 30) {
-      return 'black'
-    } else if (randomValue <= 60) {
-      return 'red'
-    } else {
-      return 'green'
-    }
+  if (randomValue <= 30) {
+    return 'black'
+  } else if (randomValue <= 60) {
+    return 'red'
+  } else {
+    return 'green'
   }
 }
+
+function getRandomIntInclusive(min: number, max: number) { 
+  min = Math.ceil(min)
+  max = Math.floor(max)
+  return Math.floor(Math.random() * (max - min + 1) + min)
+}
+
+const translateColor: Record<RandomColor, string> = {
+  red: 'красный',
+  black: 'чёрный',
+  green: 'зелённый',
+}
+// function translateColor(color: RandomColor): string {
+//   switch (color) {
+//     case 'red': return 'красный'
+//     case 'black': return 'чёрный'
+//     case 'green': return 'зелённый'
+//   }
+// }
